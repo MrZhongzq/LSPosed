@@ -3,6 +3,7 @@ package org.matrix.vector.legacy;
 import android.content.res.XResources;
 
 import org.lsposed.lspd.util.Utils;
+import org.lsposed.lspd.util.Utils.Log;
 import org.matrix.vector.impl.core.VectorServiceClient;
 import org.matrix.vector.impl.di.LegacyFrameworkDelegate;
 import org.matrix.vector.impl.di.LegacyPackageInfo;
