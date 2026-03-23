@@ -3,7 +3,7 @@ name: Core
 on:
   workflow_dispatch:
   push:
-    branches: [ master ]
+    branches: [ master, npatch-core ]
     tags: [ v* ]
   pull_request:
   merge_group:
