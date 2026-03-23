@@ -26,15 +26,17 @@ android {
 
         val flags =
             listOf(
-                "-DINJECTED_PACKAGE_NAME='\"${injectedPackageName}\"'",
                 "-DINJECTED_PACKAGE_UID=${injectedPackageUid}",
-                "-DMANAGER_PACKAGE_NAME='\"${defaultManagerPackageName}\"'",
             )
 
         externalNativeBuild {
             cmake {
                 cFlags.addAll(flags)
                 cppFlags.addAll(flags)
+                arguments.addAll(listOf(
+                    "-DINJECTED_PACKAGE_NAME_VAL=${injectedPackageName}",
+                    "-DMANAGER_PACKAGE_NAME_VAL=${defaultManagerPackageName}",
+                ))
             }
         }
     }

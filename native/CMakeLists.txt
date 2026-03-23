@@ -9,6 +9,11 @@ add_subdirectory(${VECTOR_ROOT}/external external)
 file(GLOB_RECURSE NATIVE_SOURCES "src/*.cpp")
 add_library(${PROJECT_NAME} STATIC ${NATIVE_SOURCES})
 
+# VERSION_NAME needs quoting for C string literal - PUBLIC so it propagates to consumers
+if(DEFINED VECTOR_VERSION_NAME)
+    target_compile_definitions(${PROJECT_NAME} PUBLIC VERSION_NAME="${VECTOR_VERSION_NAME}")
+endif()
+
 set(IGNORED_WARNINGS
     -Wno-c99-extensions
     -Wno-extra-semi

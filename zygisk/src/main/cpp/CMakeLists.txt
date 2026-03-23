@@ -5,6 +5,14 @@ project(zygisk)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# String defines that need quoting on Windows
+if(DEFINED INJECTED_PACKAGE_NAME_VAL)
+    add_compile_definitions(INJECTED_PACKAGE_NAME="${INJECTED_PACKAGE_NAME_VAL}")
+endif()
+if(DEFINED MANAGER_PACKAGE_NAME_VAL)
+    add_compile_definitions(MANAGER_PACKAGE_NAME="${MANAGER_PACKAGE_NAME_VAL}")
+endif()
+
 add_subdirectory(${VECTOR_ROOT}/native native)
 
 add_library(${PROJECT_NAME} SHARED module.cpp ipc_bridge.cpp)

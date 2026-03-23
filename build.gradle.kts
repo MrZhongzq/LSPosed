@@ -102,13 +102,13 @@ subprojects {
                 val flags =
                     listOf(
                         "-DVERSION_CODE=${versionCodeProvider.get()}",
-                        "-DVERSION_NAME='\"${versionNameProvider.get()}\"'",
                     )
 
                 val args =
                     listOf(
                         "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
                         "-DVECTOR_ROOT=${rootDir.absolutePath}",
+                        "-DVECTOR_VERSION_NAME=${versionNameProvider.get()}",
                     )
 
                 externalNativeBuild {

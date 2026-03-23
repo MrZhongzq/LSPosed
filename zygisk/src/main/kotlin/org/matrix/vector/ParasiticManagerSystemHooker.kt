@@ -3,6 +3,7 @@ package org.matrix.vector
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import io.github.libxposed.api.XposedInterface
 import org.lsposed.lspd.util.Utils
 import org.matrix.vector.impl.hookers.HandleSystemServerProcessHooker
 import org.matrix.vector.impl.hooks.VectorHookBuilder
@@ -63,17 +64,18 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
                     supervisorClass.declaredMethods.first { it.name == "resolveActivity" }
 
                 // Hook the resolution method to inject our redirection logic
-                VectorHookBuilder(resolveMethod).intercept { chain ->
+                VectorHookBuilder(resolveMethod).intercept(object : XposedInterface.Hooker {
+                    override fun intercept(chain: XposedInterface.Chain): Any? {
                     Utils.logD("inside resolveMethod, calling proceed")
                     // 1. Execute the original resolution first
                     val result = chain.proceed()
 
-                    val intent = chain.args[0] as? Intent ?: return@intercept result
+                    val intent = chain.args[0] as? Intent ?: return result
                     Utils.logD("proceed called, intent ${intent}")
 
                     // Check if this intent is meant for the LSPosed Manager
                     if (!intent.hasCategory(BuildConfig.ManagerPackageName + ".LAUNCH_MANAGER"))
-                        return@intercept result
+                        return result
 
                     val originalActivityInfo =
                         result as? ActivityInfo
@@ -81,12 +83,12 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
                                 Utils.logD(
                                     "Redirection: result is not ActivityInfo (was ${result?.javaClass?.name})"
                                 )
-                                return@intercept result
+                                return result
                             }
 
                     // We only intercept if it's currently resolving to the shell/fallback
                     if (originalActivityInfo.packageName != BuildConfig.InjectedPackageName)
-                        return@intercept result
+                        return result
 
                     Utils.logD("creat redirectedInfo")
                     // --- Redirection Logic ---
@@ -111,8 +113,9 @@ class ParasiticManagerSystemHooker : HandleSystemServerProcessHooker.Callback {
                     BridgeService.getService()?.preStartManager()
 
                     Utils.logD("returning redirectedInfo ${redirectedInfo}")
-                    redirectedInfo
-                }
+                    return redirectedInfo
+                    }
+                })
 
                 Utils.logD("Successfully hooked Activity Supervisor for Manager redirection.")
             }
