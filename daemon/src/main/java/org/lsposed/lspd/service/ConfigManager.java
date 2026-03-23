@@ -378,6 +378,29 @@ public class ConfigManager {
     private void initDB() {
         db.setForeignKeyConstraintsEnabled(true);
         int oldVersion = db.getVersion();
+
+        // Detect and recover from corrupted database: version >= 4 but tables missing.
+        // This can happen if a previous migration failed mid-way (e.g. ALTER/RENAME succeeded
+        // but CREATE failed), leaving the database in an inconsistent state.
+        boolean modulesTableExists = false;
+        boolean configsTableExists = false;
+        try (android.database.Cursor c = db.rawQuery(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('modules','configs')",
+                null)) {
+            while (c.moveToNext()) {
+                String name = c.getString(0);
+                if ("modules".equals(name)) modulesTableExists = true;
+                if ("configs".equals(name)) configsTableExists = true;
+            }
+        } catch (Throwable ignored) {
+        }
+        if (oldVersion >= 4 && (!modulesTableExists || !configsTableExists)) {
+            Log.w(TAG, "Database corrupted: version=" + oldVersion +
+                    " but tables missing (modules=" + modulesTableExists +
+                    ", configs=" + configsTableExists + "). Forcing re-init.");
+            oldVersion = 0;
+        }
+
         if (oldVersion >= 4) {
             // Database is already up to date.
             return;
