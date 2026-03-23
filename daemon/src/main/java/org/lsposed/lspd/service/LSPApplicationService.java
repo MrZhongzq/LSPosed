@@ -120,12 +120,19 @@ public class LSPApplicationService extends ILSPApplicationService.Stub {
 
     private List<Module> getAllModulesList() throws RemoteException {
         var processInfo = ensureRegistered();
+        Log.i(TAG, "getAllModulesList: uid=" + processInfo.uid + " processName=" + processInfo.processName);
         if (processInfo.uid == Process.SYSTEM_UID && processInfo.processName.equals("system")) {
-            return ConfigManager.getInstance().getModulesForSystemServer();
+            var modules = ConfigManager.getInstance().getModulesForSystemServer();
+            Log.i(TAG, "getAllModulesList: returning " + modules.size() + " modules (system server)");
+            return modules;
         }
-        if (ServiceManager.getManagerService().isRunningManager(processInfo.pid, processInfo.uid))
+        if (ServiceManager.getManagerService().isRunningManager(processInfo.pid, processInfo.uid)) {
+            Log.i(TAG, "getAllModulesList: returning empty (manager process)");
             return Collections.emptyList();
-        return ConfigManager.getInstance().getModulesForProcess(processInfo.processName, processInfo.uid);
+        }
+        var modules = ConfigManager.getInstance().getModulesForProcess(processInfo.processName, processInfo.uid);
+        Log.i(TAG, "getAllModulesList: returning " + modules.size() + " modules for " + processInfo.processName + "/" + processInfo.uid);
+        return modules;
     }
 
     @Override
