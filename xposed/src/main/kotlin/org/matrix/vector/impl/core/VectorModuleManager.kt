@@ -26,7 +26,7 @@ object VectorModuleManager {
      */
     fun loadModule(module: Module, isSystemServer: Boolean, processName: String): Boolean {
         try {
-            Log.d(TAG, "Loading module ${module.packageName}")
+            Log.i(TAG, "VectorModuleManager: Loading module ${module.packageName} for process $processName")
 
             // Construct the native library search path
             val librarySearchPath = buildString {

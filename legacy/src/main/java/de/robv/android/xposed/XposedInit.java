@@ -205,6 +205,7 @@ public final class XposedInit {
 
     public static void loadLegacyModules() {
         var moduleList = VectorServiceClient.INSTANCE.getLegacyModulesList();
+        Log.i(TAG, "loadLegacyModules: found " + moduleList.size() + " legacy modules");
         moduleList.forEach(module -> {
             var apk = module.apkPath;
             var name = module.packageName;
@@ -218,7 +219,9 @@ public final class XposedInit {
 
     public static void loadModules(ActivityThread at) {
         var packages = (ArrayMap<?, ?>) XposedHelpers.getObjectField(at, "mPackages");
-        VectorServiceClient.INSTANCE.getModulesList().forEach(module -> {
+        var moduleList = VectorServiceClient.INSTANCE.getModulesList();
+        Log.i(TAG, "loadModules: found " + moduleList.size() + " modern modules");
+        moduleList.forEach(module -> {
             loadedModules.put(module.packageName, Optional.empty());
             if (!VectorModuleManager.INSTANCE.loadModule(module, startsSystemServer, VectorServiceClient.INSTANCE.getProcessName())) {
                 loadedModules.remove(module.packageName);

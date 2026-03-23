@@ -30,6 +30,7 @@ public class LegacyDelegateImpl implements LegacyFrameworkDelegate {
 
     @Override
     public void loadModules(Object activityThread) {
+        Log.i("LegacyDelegate", "loadModules called, delegating to XposedInit.loadModules");
         XposedInit.loadModules((android.app.ActivityThread) activityThread);
     }
 
