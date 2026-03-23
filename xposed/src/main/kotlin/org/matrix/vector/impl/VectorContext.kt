@@ -188,6 +188,8 @@ object VectorLifecycleManager {
                 override fun isFirstPackage(): Boolean = isFirst
 
                 override fun getDefaultClassLoader(): ClassLoader = defaultClassLoader
+
+                override fun getClassLoader(): ClassLoader = defaultClassLoader
             }
 
         activeModules.forEach { module ->
