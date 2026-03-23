@@ -91,6 +91,34 @@ internal abstract class BaseInvoker<T : Invoker<T, U>, U : Executable>(
         }
 }
 
+/** Generate JNI shorty for an Executable (Method or Constructor). Package-level utility. */
+fun generateShorty(executable: java.lang.reflect.Executable): CharArray {
+    val parameterTypes = executable.parameterTypes
+    val shorty = CharArray(parameterTypes.size + 1)
+    shorty[0] = when {
+        executable is java.lang.reflect.Method -> getTypeShortyChar(executable.returnType)
+        else -> 'V'
+    }
+    for (i in 1..shorty.lastIndex) {
+        shorty[i] = getTypeShortyChar(parameterTypes[i - 1])
+    }
+    return shorty
+}
+
+private fun getTypeShortyChar(type: Class<*>): Char =
+    when (type) {
+        Int::class.javaPrimitiveType -> 'I'
+        Long::class.javaPrimitiveType -> 'J'
+        Float::class.javaPrimitiveType -> 'F'
+        Double::class.javaPrimitiveType -> 'D'
+        Boolean::class.javaPrimitiveType -> 'Z'
+        Byte::class.javaPrimitiveType -> 'B'
+        Char::class.javaPrimitiveType -> 'C'
+        Short::class.javaPrimitiveType -> 'S'
+        Void.TYPE -> 'V'
+        else -> 'L'
+    }
+
 /** Invoker implementation specifically for [Method] types. */
 internal class VectorMethodInvoker(method: Method) :
     BaseInvoker<VectorMethodInvoker, Method>(method) {

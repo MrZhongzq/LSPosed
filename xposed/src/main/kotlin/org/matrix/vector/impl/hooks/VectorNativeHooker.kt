@@ -11,6 +11,8 @@ import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import org.lsposed.lspd.util.Utils
+import org.matrix.vector.impl.compat.Api100HookCallback
+import org.matrix.vector.impl.compat.Api100HookerCallback
 import org.matrix.vector.impl.di.VectorBootstrap
 import org.matrix.vector.nativebridge.HookBridge
 
@@ -72,16 +74,30 @@ class VectorNativeHooker<T : Executable>(private val method: T) {
         val thisObject = if (isStatic) null else args[0]
         val actualArgs = if (isStatic) args else args.sliceArray(1 until args.size)
 
-        // Retrieve the hook snapshots
-        val snapshots = HookBridge.callbackSnapshot(VectorHookRecord::class.java, method)
+        // Retrieve the hook snapshots. Use Any::class.java for mixed callback types.
+        val snapshots = HookBridge.callbackSnapshot(Any::class.java, method)
 
-        @Suppress("UNCHECKED_CAST") val modernHooks = snapshots[0] as Array<VectorHookRecord>
+        val rawModernHooks = snapshots[0]
         val legacyHooks = snapshots[1]
 
         // Fast path: No hooks active
-        if (modernHooks.isEmpty() && legacyHooks.isEmpty()) {
+        if (rawModernHooks.isEmpty() && legacyHooks.isEmpty()) {
             return invokeOriginalSafely(thisObject, actualArgs)
         }
+
+        // Separate and wrap API 100 callbacks into the unified interceptor chain.
+        // API 101 hooks are VectorHookRecord, API 100 hooks are Api100HookerCallback.
+        // Both are sorted by priority in the native multimap already.
+        val modernHooks = rawModernHooks.map { hook ->
+            when (hook) {
+                is VectorHookRecord -> hook
+                is Api100HookerCallback -> wrapApi100AsInterceptor(hook)
+                else -> {
+                    Utils.logW("Unknown modern hook type: ${hook?.javaClass?.name}")
+                    VectorHookRecord(object : Hooker { override fun intercept(chain: XposedInterface.Chain) = chain.proceed() }, XposedInterface.PRIORITY_DEFAULT, ExceptionMode.DEFAULT)
+                }
+            }
+        }.toTypedArray()
 
         val terminal: (Any?, Array<Any?>) -> Any? = { tObj, tArgs ->
             val delegate = VectorBootstrap.delegate
@@ -145,5 +161,72 @@ class VectorNativeHooker<T : Executable>(private val method: T) {
         } catch (ite: InvocationTargetException) {
             throw ite.cause ?: ite
         }
+    }
+
+    /**
+     * Wraps an API 100 HookerCallback as a VectorHookRecord that participates
+     * in the interceptor chain. This preserves priority ordering across APIs.
+     */
+    private fun wrapApi100AsInterceptor(hookerCallback: Api100HookerCallback): VectorHookRecord {
+        val hooker = object : Hooker {
+            override fun intercept(chain: XposedInterface.Chain): Any? {
+                val ctx = Api100HookCallback(
+                    chain.executable,
+                    chain.thisObject,
+                    chain.args.toTypedArray()
+                )
+
+                // Call before
+                var beforeContext: Any? = null
+                try {
+                    if (hookerCallback.beforeParams == 0) {
+                        beforeContext = hookerCallback.beforeInvocation.invoke(null)
+                    } else {
+                        beforeContext = hookerCallback.beforeInvocation.invoke(null, ctx)
+                    }
+                } catch (t: Throwable) {
+                    Utils.logE("API 100 before hook error", t)
+                    ctx.setResult(null)
+                    ctx.isSkipped = false
+                }
+
+                if (ctx.isSkipped) {
+                    val t = ctx.throwable
+                    if (t != null) throw t
+                    return ctx.result
+                }
+
+                // Proceed down the chain
+                val result = try {
+                    chain.proceed()
+                } catch (t: Throwable) {
+                    ctx.setThrowable(t)
+                    null
+                }
+                if (ctx.throwable == null) {
+                    ctx.setResult(result)
+                }
+
+                // Call after
+                try {
+                    when (hookerCallback.afterParams) {
+                        0 -> hookerCallback.afterInvocation.invoke(null)
+                        1 -> hookerCallback.afterInvocation.invoke(null, ctx)
+                        else -> hookerCallback.afterInvocation.invoke(null, ctx, beforeContext)
+                    }
+                } catch (t: Throwable) {
+                    Utils.logE("API 100 after hook error", t)
+                    if (ctx.throwable == null) {
+                        ctx.setResult(result)
+                    }
+                }
+
+                val throwable = ctx.throwable
+                if (throwable != null) throw throwable
+                return ctx.result
+            }
+        }
+
+        return VectorHookRecord(hooker, 0, ExceptionMode.PASSTHROUGH)
     }
 }
