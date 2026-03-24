@@ -142,15 +142,7 @@ object Api100Bridge {
         }
 
         // Fall through to API 101 intercept(Chain) path
-        Log.d(TAG, "Hooker ${hookerClass.name} using API 101 intercept() fallback")
-        val hooker = try {
-            hookerClass.getDeclaredConstructor().newInstance()
-        } catch (e: Exception) {
-            throw IllegalArgumentException(
-                "Hooker class ${hookerClass.name} has no before/after methods and cannot be instantiated for intercept() fallback", e
-            )
-        }
-
+        val hooker = instantiateHooker(hookerClass)
         val record = VectorHookRecord(hooker, priority, ExceptionMode.DEFAULT)
 
         if (HookBridge.hookMethod(true, hookMethod, VectorNativeHooker::class.java, priority, record)) {
@@ -192,13 +184,7 @@ object Api100Bridge {
         priority: Int,
         hookerClass: Class<out XposedInterface.Hooker>,
     ): XposedInterface.MethodUnhooker<T> {
-        val hooker = try {
-            hookerClass.getDeclaredConstructor().newInstance()
-        } catch (e: Exception) {
-            throw IllegalArgumentException(
-                "Legacy hooker class ${hookerClass.name} cannot be instantiated", e
-            )
-        }
+        val hooker = instantiateHooker(hookerClass)
 
         // Register as legacy hook (useModernApi=false) so it goes through processLegacyHook
         if (HookBridge.hookMethod(false, hookMethod, VectorNativeHooker::class.java, priority, hooker)) {
@@ -210,5 +196,18 @@ object Api100Bridge {
             }
         }
         throw HookFailedError("Cannot hook $hookMethod")
+    }
+
+    /**
+     * Instantiate a hooker class. Tries no-arg constructor first,
+     * falls back to HookBridge.allocateObject (no constructor call).
+     */
+    @JvmStatic
+    private fun <T> instantiateHooker(hookerClass: Class<T>): T {
+        return try {
+            hookerClass.getDeclaredConstructor().newInstance()
+        } catch (_: Exception) {
+            HookBridge.allocateObject(hookerClass)
+        }
     }
 }
