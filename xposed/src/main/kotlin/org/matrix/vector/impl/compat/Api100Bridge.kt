@@ -10,6 +10,9 @@ import java.lang.reflect.Constructor
 import java.lang.reflect.Executable
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import org.lsposed.lspd.util.Utils.Log
+import io.github.libxposed.api.XposedInterface.ExceptionMode
+import org.matrix.vector.impl.hooks.VectorHookRecord
 
 /**
  * Bridge for API 100 hook registration.
@@ -90,7 +93,9 @@ object Api100Bridge {
         }
 
         if (beforeInvocation == null && afterInvocation == null) {
-            throw IllegalArgumentException("No method named before or after found in ${hooker.name}")
+            // No before/after found - fallback to API 101 intercept(Chain) pattern
+            // This handles hybrid modules that use API 100 registration with API 101 hookers
+            return doHookWithIntercept(hookMethod, priority, hooker)
         }
 
         // Fill in dummy for missing method
@@ -114,6 +119,93 @@ object Api100Bridge {
                 override fun getOrigin(): T = hookMethod
                 override fun unhook() {
                     HookBridge.unhookMethod(true, hookMethod, callback)
+                }
+            }
+        }
+        throw HookFailedError("Cannot hook $hookMethod")
+    }
+
+    /**
+     * Fallback for hooker classes without before/after static methods.
+     * Tries legacy (XC_MethodHook) first, then API 101 intercept(Chain).
+     */
+    @JvmStatic
+    private fun <T : Executable> doHookWithIntercept(
+        hookMethod: T,
+        priority: Int,
+        hookerClass: Class<out XposedInterface.Hooker>,
+    ): XposedInterface.MethodUnhooker<T> {
+        // Try legacy XC_MethodHook path first
+        if (isLegacyHooker(hookerClass)) {
+            Log.d(TAG, "Hooker ${hookerClass.name} is a legacy XC_MethodHook, using legacy path")
+            return doHookAsLegacy(hookMethod, priority, hookerClass)
+        }
+
+        // Fall through to API 101 intercept(Chain) path
+        Log.d(TAG, "Hooker ${hookerClass.name} using API 101 intercept() fallback")
+        val hooker = try {
+            hookerClass.getDeclaredConstructor().newInstance()
+        } catch (e: Exception) {
+            throw IllegalArgumentException(
+                "Hooker class ${hookerClass.name} has no before/after methods and cannot be instantiated for intercept() fallback", e
+            )
+        }
+
+        val record = VectorHookRecord(hooker, priority, ExceptionMode.DEFAULT)
+
+        if (HookBridge.hookMethod(true, hookMethod, VectorNativeHooker::class.java, priority, record)) {
+            return object : XposedInterface.MethodUnhooker<T> {
+                override fun getOrigin(): T = hookMethod
+                override fun unhook() {
+                    HookBridge.unhookMethod(true, hookMethod, record)
+                }
+            }
+        }
+        throw HookFailedError("Cannot hook $hookMethod")
+    }
+
+    /**
+     * Check if the hooker class is a legacy XC_MethodHook subclass.
+     * Uses reflection since the legacy module is not a compile-time dependency.
+     */
+    @JvmStatic
+    private fun isLegacyHooker(hookerClass: Class<*>): Boolean {
+        return try {
+            val xcMethodHook = Class.forName(
+                "de.robv.android.xposed.XC_MethodHook",
+                false,
+                hookerClass.classLoader
+            )
+            xcMethodHook.isAssignableFrom(hookerClass)
+        } catch (_: ClassNotFoundException) {
+            false
+        }
+    }
+
+    /**
+     * Register a hook using the legacy XC_MethodHook path.
+     * The hooker is instantiated and registered with useModernApi=false.
+     */
+    @JvmStatic
+    private fun <T : Executable> doHookAsLegacy(
+        hookMethod: T,
+        priority: Int,
+        hookerClass: Class<out XposedInterface.Hooker>,
+    ): XposedInterface.MethodUnhooker<T> {
+        val hooker = try {
+            hookerClass.getDeclaredConstructor().newInstance()
+        } catch (e: Exception) {
+            throw IllegalArgumentException(
+                "Legacy hooker class ${hookerClass.name} cannot be instantiated", e
+            )
+        }
+
+        // Register as legacy hook (useModernApi=false) so it goes through processLegacyHook
+        if (HookBridge.hookMethod(false, hookMethod, VectorNativeHooker::class.java, priority, hooker)) {
+            return object : XposedInterface.MethodUnhooker<T> {
+                override fun getOrigin(): T = hookMethod
+                override fun unhook() {
+                    HookBridge.unhookMethod(false, hookMethod, hooker)
                 }
             }
         }
