@@ -19,7 +19,7 @@
 [submodule "xposed/libxposed"]
 	path = xposed/libxposed
 	url = https://github.com/MrZhongzq/api.git
-	branch = npatch-core
+	branch = npatch-102
 [submodule "external/apache/commons-lang"]
 	path = external/apache/commons-lang
 	url = https://github.com/apache/commons-lang.git

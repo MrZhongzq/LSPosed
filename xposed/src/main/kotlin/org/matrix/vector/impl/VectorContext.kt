@@ -13,7 +13,6 @@ import java.lang.reflect.Method
 import java.util.concurrent.ConcurrentHashMap
 import org.lsposed.lspd.service.ILSPInjectedModuleService
 import org.lsposed.lspd.util.Utils.Log
-import org.matrix.vector.impl.compat.Api100Bridge
 import org.matrix.vector.impl.hooks.VectorCtorInvoker
 import org.matrix.vector.impl.hooks.VectorHookBuilder
 import org.matrix.vector.impl.hooks.VectorMethodInvoker
@@ -98,72 +97,6 @@ class VectorContext(
         }
         Log.println(priority, finalTag, fullMsg)
     }
-
-    // ==================== API 100 Method Overrides ====================
-
-    override fun getFrameworkPrivilege(): Int = XposedInterface.FRAMEWORK_PRIVILEGE_EMBEDDED
-
-    override fun hook(origin: Method, hooker: Class<out XposedInterface.Hooker>): XposedInterface.MethodUnhooker<Method> {
-        return Api100Bridge.doHook(origin, XposedInterface.PRIORITY_DEFAULT, hooker)
-    }
-
-    override fun hook(origin: Method, priority: Int, hooker: Class<out XposedInterface.Hooker>): XposedInterface.MethodUnhooker<Method> {
-        return Api100Bridge.doHook(origin, priority, hooker)
-    }
-
-    override fun <T : Any> hook(origin: Constructor<T>, hooker: Class<out XposedInterface.Hooker>): XposedInterface.MethodUnhooker<Constructor<T>> {
-        return Api100Bridge.doHook(origin, XposedInterface.PRIORITY_DEFAULT, hooker)
-    }
-
-    override fun <T : Any> hook(origin: Constructor<T>, priority: Int, hooker: Class<out XposedInterface.Hooker>): XposedInterface.MethodUnhooker<Constructor<T>> {
-        return Api100Bridge.doHook(origin, priority, hooker)
-    }
-
-    override fun <T : Any> hookClassInitializer(origin: Class<T>, hooker: Class<out XposedInterface.Hooker>): XposedInterface.MethodUnhooker<Constructor<T>> {
-        val clinit = HookBridge.getStaticInitializer(origin)
-            ?: throw IllegalArgumentException("Class ${origin.name} has no static initializer")
-        @Suppress("UNCHECKED_CAST")
-        return Api100Bridge.doHook(clinit, XposedInterface.PRIORITY_DEFAULT, hooker) as XposedInterface.MethodUnhooker<Constructor<T>>
-    }
-
-    override fun <T : Any> hookClassInitializer(origin: Class<T>, priority: Int, hooker: Class<out XposedInterface.Hooker>): XposedInterface.MethodUnhooker<Constructor<T>> {
-        val clinit = HookBridge.getStaticInitializer(origin)
-            ?: throw IllegalArgumentException("Class ${origin.name} has no static initializer")
-        @Suppress("UNCHECKED_CAST")
-        return Api100Bridge.doHook(clinit, priority, hooker) as XposedInterface.MethodUnhooker<Constructor<T>>
-    }
-
-    override fun invokeOrigin(method: Method, thisObject: Any?, vararg args: Any?): Any? {
-        return HookBridge.invokeOriginalMethod(method, thisObject, *args)
-    }
-
-    override fun <T : Any> invokeOrigin(constructor: Constructor<T>, thisObject: T, vararg args: Any?) {
-        HookBridge.invokeOriginalMethod(constructor, thisObject, *args)
-    }
-
-    override fun invokeSpecial(method: Method, thisObject: Any, vararg args: Any?): Any? {
-        val shorty = org.matrix.vector.impl.hooks.generateShorty(method)
-        return HookBridge.invokeSpecialMethod(method, shorty, method.declaringClass, thisObject, *args)
-    }
-
-    override fun <T : Any> invokeSpecial(constructor: Constructor<T>, thisObject: T, vararg args: Any?) {
-        val shorty = org.matrix.vector.impl.hooks.generateShorty(constructor)
-        HookBridge.invokeSpecialMethod(constructor, shorty, constructor.declaringClass, thisObject, *args)
-    }
-
-    override fun <T : Any> newInstanceOrigin(constructor: Constructor<T>, vararg args: Any?): T {
-        val instance = HookBridge.allocateObject(constructor.declaringClass)
-        HookBridge.invokeOriginalMethod(constructor, instance, *args)
-        return instance
-    }
-
-    @Suppress("UNCHECKED_CAST")
-    override fun <T : Any, U : Any> newInstanceSpecial(constructor: Constructor<T>, subClass: Class<U>, vararg args: Any?): U {
-        val instance = HookBridge.allocateObject(subClass)
-        val shorty = org.matrix.vector.impl.hooks.generateShorty(constructor)
-        HookBridge.invokeSpecialMethod(constructor, shorty, constructor.declaringClass, instance, *args)
-        return instance
-    }
 }
 
 /** Manages the dispatching of modern lifecycle events to loaded modules. */
@@ -188,8 +121,6 @@ object VectorLifecycleManager {
                 override fun isFirstPackage(): Boolean = isFirst
 
                 override fun getDefaultClassLoader(): ClassLoader = defaultClassLoader
-
-                override fun getClassLoader(): ClassLoader = defaultClassLoader
             }
 
         activeModules.forEach { module ->

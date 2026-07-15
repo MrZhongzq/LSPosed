@@ -11,8 +11,6 @@ import java.lang.reflect.InvocationTargetException
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import org.lsposed.lspd.util.Utils
-import org.matrix.vector.impl.compat.Api100HookCallback
-import org.matrix.vector.impl.compat.Api100HookerCallback
 import org.matrix.vector.impl.di.VectorBootstrap
 import org.matrix.vector.nativebridge.HookBridge
 
@@ -21,12 +19,16 @@ class VectorHookBuilder(private val origin: Executable) : HookBuilder {
 
     private var priority = XposedInterface.PRIORITY_DEFAULT
     private var exceptionMode = ExceptionMode.DEFAULT
+    private var id: String? = null
 
     override fun setPriority(priority: Int): HookBuilder = apply { this.priority = priority }
 
     override fun setExceptionMode(mode: ExceptionMode): HookBuilder = apply {
         this.exceptionMode = mode
     }
+
+    // libxposed API 102: hooks may carry a unique id used for hot-reload identification.
+    override fun setId(id: String?): HookBuilder = apply { this.id = id }
 
     override fun intercept(hooker: Hooker): HookHandle {
         if (Modifier.isAbstract(origin.modifiers)) {
@@ -53,8 +55,21 @@ class VectorHookBuilder(private val origin: Executable) : HookBuilder {
         return object : HookHandle {
             override fun getExecutable(): Executable = origin
 
+            override fun getId(): String? = id
+
             override fun unhook() {
                 HookBridge.unhookMethod(true, origin, record)
+            }
+
+            // Hot-reload (API 102): unhook the current hooker and register the new one,
+            // carrying over priority / exception mode / id from this builder.
+            override fun replaceHook(hooker: Hooker): HookHandle {
+                unhook()
+                return VectorHookBuilder(origin)
+                    .setPriority(priority)
+                    .setExceptionMode(exceptionMode)
+                    .setId(id)
+                    .intercept(hooker)
             }
         }
     }
@@ -85,13 +100,11 @@ class VectorNativeHooker<T : Executable>(private val method: T) {
             return invokeOriginalSafely(thisObject, actualArgs)
         }
 
-        // Separate and wrap API 100 callbacks into the unified interceptor chain.
-        // API 101 hooks are VectorHookRecord, API 100 hooks are Api100HookerCallback.
-        // Both are sorted by priority in the native multimap already.
+        // Modern hooks are all VectorHookRecord (libxposed API 101/102 interceptor chain).
+        // Sorted by priority in the native multimap already.
         val modernHooks = rawModernHooks.map { hook ->
             when (hook) {
                 is VectorHookRecord -> hook
-                is Api100HookerCallback -> wrapApi100AsInterceptor(hook)
                 else -> {
                     Utils.logW("Unknown modern hook type: ${hook?.javaClass?.name}")
                     VectorHookRecord(object : Hooker { override fun intercept(chain: XposedInterface.Chain) = chain.proceed() }, XposedInterface.PRIORITY_DEFAULT, ExceptionMode.DEFAULT)
@@ -161,72 +174,5 @@ class VectorNativeHooker<T : Executable>(private val method: T) {
         } catch (ite: InvocationTargetException) {
             throw ite.cause ?: ite
         }
-    }
-
-    /**
-     * Wraps an API 100 HookerCallback as a VectorHookRecord that participates
-     * in the interceptor chain. This preserves priority ordering across APIs.
-     */
-    private fun wrapApi100AsInterceptor(hookerCallback: Api100HookerCallback): VectorHookRecord {
-        val hooker = object : Hooker {
-            override fun intercept(chain: XposedInterface.Chain): Any? {
-                val ctx = Api100HookCallback(
-                    chain.executable,
-                    chain.thisObject,
-                    chain.args.toTypedArray()
-                )
-
-                // Call before
-                var beforeContext: Any? = null
-                try {
-                    if (hookerCallback.beforeParams == 0) {
-                        beforeContext = hookerCallback.beforeInvocation.invoke(null)
-                    } else {
-                        beforeContext = hookerCallback.beforeInvocation.invoke(null, ctx)
-                    }
-                } catch (t: Throwable) {
-                    Utils.logE("API 100 before hook error", t)
-                    ctx.setResult(null)
-                    ctx.isSkipped = false
-                }
-
-                if (ctx.isSkipped) {
-                    val t = ctx.throwable
-                    if (t != null) throw t
-                    return ctx.result
-                }
-
-                // Proceed down the chain
-                val result = try {
-                    chain.proceed()
-                } catch (t: Throwable) {
-                    ctx.setThrowable(t)
-                    null
-                }
-                if (ctx.throwable == null) {
-                    ctx.setResult(result)
-                }
-
-                // Call after
-                try {
-                    when (hookerCallback.afterParams) {
-                        0 -> hookerCallback.afterInvocation.invoke(null)
-                        1 -> hookerCallback.afterInvocation.invoke(null, ctx)
-                        else -> hookerCallback.afterInvocation.invoke(null, ctx, beforeContext)
-                    }
-                } catch (t: Throwable) {
-                    Utils.logE("API 100 after hook error", t)
-                    if (ctx.throwable == null) {
-                        ctx.setResult(result)
-                    }
-                }
-
-                val throwable = ctx.throwable
-                if (throwable != null) throw throwable
-                return ctx.result
-            }
-        }
-
-        return VectorHookRecord(hooker, 0, ExceptionMode.PASSTHROUGH)
     }
 }
