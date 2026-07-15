@@ -29,5 +29,9 @@ dependencies {
     implementation(projects.hiddenapi.bridge)
     implementation(projects.services.daemonService)
     compileOnly(libs.androidx.annotation)
+    // Pure libxposed/api 102.0.0 source references @SinceApi / @InternalApi from the
+    // separate io.github.libxposed:annotation artifact (the old 100+101 hybrid had
+    // these stripped). It is compile-time only, so compileOnly is enough.
+    compileOnly("io.github.libxposed:annotation:1.0.0")
     compileOnly(projects.hiddenapi.stubs)
 }
