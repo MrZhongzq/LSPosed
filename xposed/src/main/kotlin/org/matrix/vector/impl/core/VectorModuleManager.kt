@@ -2,7 +2,6 @@ package org.matrix.vector.impl.core
 
 import android.os.Build
 import android.os.Process
-import io.github.libxposed.api.XposedInterface
 import io.github.libxposed.api.XposedModule
 import io.github.libxposed.api.XposedModuleInterface.ModuleLoadedParam
 import java.io.File
@@ -65,6 +64,13 @@ object VectorModuleManager {
                     service = module.service, // Our IPC client
                 )
 
+            val loadedParam =
+                object : ModuleLoadedParam {
+                    override fun isSystemServer(): Boolean = isSystemServer
+
+                    override fun getProcessName(): String = processName
+                }
+
             // Instantiate the module entry classes
             for (className in module.file.moduleClassNames) {
                 runCatching {
@@ -76,34 +82,29 @@ object VectorModuleManager {
                             return@runCatching
                         }
 
-                        val constructor =
-                            moduleClass.getConstructor(
-                                XposedInterface::class.java,
-                                ModuleLoadedParam::class.java,
-                            )
-
-                        // Inject the Context and the loaded parameters!
+                        // libxposed api (10x) instantiates the entry via its NO-ARG constructor, then
+                        // hands the framework interface over with attachFramework(). The old
+                        // (XposedInterface, ModuleLoadedParam) constructor contract predates this api
+                        // and never matches — our XposedModule has no such constructor, so getConstructor
+                        // threw NoSuchMethodException and every modern module failed to instantiate.
                         val moduleInstance =
-                            constructor.newInstance(
-                                vectorContext,
-                                object : ModuleLoadedParam {
-                                    override fun isSystemServer(): Boolean = isSystemServer
+                            moduleClass.getDeclaredConstructor()
+                                .apply { isAccessible = true }
+                                .newInstance() as XposedModule
 
-                                    override fun getProcessName(): String = processName
-                                },
-                            ) as XposedModule
+                        // Attach the framework BEFORE any lifecycle callback (XposedInterface APIs the
+                        // module may call in onModuleLoaded require it). detachImpl stops future
+                        // callbacks by dropping the entry from the active set.
+                        moduleInstance.attachFramework(
+                            vectorContext,
+                            Runnable { VectorLifecycleManager.activeModules.remove(moduleInstance) },
+                        )
 
                         // Register the active module to receive future lifecycle events
                         VectorLifecycleManager.activeModules.add(moduleInstance)
 
                         // Trigger the initial onModuleLoaded callback
-                        moduleInstance.onModuleLoaded(
-                            object : ModuleLoadedParam {
-                                override fun isSystemServer(): Boolean = isSystemServer
-
-                                override fun getProcessName(): String = processName
-                            }
-                        )
+                        moduleInstance.onModuleLoaded(loadedParam)
                     }
                     .onFailure { e -> Log.e(TAG, "    Failed to instantiate class $className", e) }
             }
