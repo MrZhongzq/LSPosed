@@ -18,6 +18,7 @@ import android.os.IBinder;
 import android.os.Process;
 import android.util.ArrayMap;
 
+import org.matrix.vector.impl.VectorLifecycleManager;
 import org.matrix.vector.impl.core.VectorDeopter;
 import org.matrix.vector.impl.core.VectorModuleManager;
 import org.matrix.vector.impl.core.VectorServiceClient;
@@ -229,6 +230,23 @@ public final class XposedInit {
                 packages.remove(module.packageName);
             }
         });
+    }
+
+    /**
+     * Deliver the modern (libxposed) onPackageLoaded lifecycle to registered modules for the
+     * in-process target package. In the Zygisk framework this fires from LoadedApkHookers when the
+     * app's LoadedApk is created; NPatch bootstraps in-process AFTER that point, so no hook fires it
+     * — call this directly (parallels the legacy {@link de.robv.android.xposed.callbacks.XC_LoadPackage}
+     * {@code callAll} path). isFirstPackage is true: NPatch injects into the process's own package.
+     */
+    public static void loadModernPackage(String packageName, android.content.pm.ApplicationInfo appInfo,
+                                         ClassLoader classLoader) {
+        if (packageName == null || appInfo == null || classLoader == null) return;
+        try {
+            VectorLifecycleManager.INSTANCE.dispatchPackageLoaded(packageName, appInfo, true, classLoader);
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to dispatch modern onPackageLoaded for " + packageName, t);
+        }
     }
 
     /**
