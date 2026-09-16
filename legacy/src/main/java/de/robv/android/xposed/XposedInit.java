@@ -240,12 +240,26 @@ public final class XposedInit {
      * {@code callAll} path). isFirstPackage is true: NPatch injects into the process's own package.
      */
     public static void loadModernPackage(String packageName, android.content.pm.ApplicationInfo appInfo,
-                                         ClassLoader classLoader) {
+                                         ClassLoader classLoader, Object appComponentFactory) {
         if (packageName == null || appInfo == null || classLoader == null) return;
+        // In NPatch's in-process bootstrap the default classloader is ready AND the (stub)
+        // AppComponentFactory has been instantiated, and the host Application is not created yet — the
+        // point at which both onPackageLoaded (before ACF) and onPackageReady (after ACF, before
+        // Application) are meant to fire. Neither has an in-process hook (LoadedApkHookers fires only
+        // in the Zygisk framework), so dispatch both directly, in order. Many modern modules (e.g.
+        // xmsf) install their hooks in onPackageReady, so skipping it silently loads the module but
+        // runs nothing.
         try {
             VectorLifecycleManager.INSTANCE.dispatchPackageLoaded(packageName, appInfo, true, classLoader);
         } catch (Throwable t) {
             Log.e(TAG, "Failed to dispatch modern onPackageLoaded for " + packageName, t);
+        }
+        if (appComponentFactory == null) return; // dispatchPackageReady requires a non-null ACF
+        try {
+            VectorLifecycleManager.INSTANCE.dispatchPackageReady(
+                    packageName, appInfo, true, classLoader, classLoader, appComponentFactory);
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to dispatch modern onPackageReady for " + packageName, t);
         }
     }
 
